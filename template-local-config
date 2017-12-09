@@ -1,0 +1,9 @@
+const char* WIFI_SSID = 
+const char* WIFI_P = 
+const char* MQTT_HOST = 
+#define MQTT_PORT 
+const char* TOPIC_ENV_TEMP  = 
+const char* TOPIC_ENV_HUMID = 
+const char* MQTT_CLIENT_ID = 
+const char* MQTT_USERNAME = 
+const char* MQTT_P = 
