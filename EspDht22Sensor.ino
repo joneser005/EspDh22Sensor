@@ -13,8 +13,7 @@ const unsigned long ENV_UPDATE_SECS = 5*60;
 /****************************************************************************************/
 dht DHT;
 WiFiClient wifiClient;
-void mqtt_callback(char* topic, byte* payload, unsigned int length);
-PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, mqtt_callback, wifiClient);
+PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, 0 /* no callback fn */, wifiClient);
 float lastPubTime = 0;
 // DHT11: Humidity sensor is reading low (the one on the 4-outlet box). 
 // Until we know more about its (in)accuracy, performing a
@@ -64,6 +63,12 @@ void connectWifi() {
   Serial.println(WiFi.gatewayIP());
 }
 
+void disconnectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.disconnect();
+  }
+}
+
 void connectMqtt() {
   if (!mqttClient.connected()) {
     Serial.print("Connecting to MQTT server.....");
@@ -79,6 +84,13 @@ void connectMqtt() {
       Serial.print("MQTT state = ");
       Serial.println(mqttClient.state()); // neg=lost connection, pos=never had one
     }
+  }
+}
+
+void disconnectMqtt() {
+  if (mqttClient.connected()) {
+    Serial.print("Disconnecting from MQTT server.....");
+    mqttClient.disconnect();
   }
 }
 
@@ -120,6 +132,9 @@ void sendEnvReadings() {
     */
     publishFloat(TOPIC_ENV_HUMID, h);
   }
+
+  disconnectMqtt();
+  disconnectWiFi();
 }
     
 
@@ -138,9 +153,6 @@ void publishString(const char * topic, const char * val) {
   Serial.print("] value [");
   Serial.print(val);
   Serial.print("] ");
-  while (millis() < lastPubTime + MQTT_PUB_SPAN_MS) {
-    delay(20);
-  }
   if (mqttClient.publish(topic, val, true)) {
     lastPubTime = millis();
     Serial.println("succeeded");
@@ -150,21 +162,12 @@ void publishString(const char * topic, const char * val) {
   }
 }
 
-
-float lastRecordedTemp = 0.0;
-float lastRecordedHumidity = 0.0;
-float tempChangeThreshold = 0.5;
-float humidityChangeThreshold = 1.0;
-
-unsigned long timeToSendEnvReadings = 0;
 /****************************************************************************************/
 /****************************************************************************************/
 void loop() {
-//  delay(250);
+//  TODO: Deep sleep until time to next reading
+  Serial.println("Updating environment readings.....");
+  sendEnvReadings();
   mqttClient.loop();
-  if (millis() > timeToSendEnvReadings) {
-    Serial.println("Time to update environment readings.....");
-    sendEnvReadings();
-    timeToSendEnvReadings = millis() + (1000 * ENV_UPDATE_SECS);
-  }
+  delay(1000 * ENV_UPDATE_SECS);
 }
