@@ -1,21 +1,23 @@
 /*
-ESP8266 + DHT22 sensor
+  ESP8266 + DHT22 sensor
 */
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h>  /* https://acrobotic.com/media/wysiwyg/products/esp8266_devkit_horizontal-01.png */
 #include <PubSubClient.h>  /* https://pubsubclient.knolleary.net/api.html */
-#include "dht.h"
 
+const unsigned long ENV_UPDATE_SECS = 30;
+#define DHTPIN D2  /* GPIO numbers and pin numbers are maddeningly different! */
+
+#include "dht.h"  /* https://playground.arduino.cc/Main/DHTLib */
+dht DHT;
 #include "local-config.h"
 
-const unsigned long ENV_UPDATE_SECS = 5*60;
-#define DHT22_PIN 5
 
 /****************************************************************************************/
-dht DHT;
+
 WiFiClient wifiClient;
 PubSubClient mqttClient(MQTT_HOST, MQTT_PORT, 0 /* no callback fn */, wifiClient);
 float lastPubTime = 0;
-// DHT11: Humidity sensor is reading low (the one on the 4-outlet box). 
+// DHT11: Humidity sensor is reading low (the one on the 4-outlet box).
 // Until we know more about its (in)accuracy, performing a
 // crude correction to the value to known value.
 // nov 2017 reads 21, actual is 45
@@ -28,13 +30,15 @@ float lastPubTime = 0;
 void setup() {
   Serial.begin(115200);
   delay(10);
+  pinMode(DHTPIN, INPUT_PULLUP);
+  delay(5000);
+  Serial.println("Setup complete");
 }
 /****************************************************************************************/
 
 float ctof(float c) {
   return (c * 1.8) + 32;
 }
-
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) {
@@ -47,14 +51,14 @@ void connectWifi() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_P);
-  
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print("-");
   }
- 
+
   Serial.println("");
-  Serial.println("WiFi connected");  
+  Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
   Serial.print("Netmask: ");
@@ -75,7 +79,7 @@ void connectMqtt() {
     char willTopic[27];
     sprintf(willTopic, "/status/%s", MQTT_CLIENT_ID);
     const char *willMsg = "Disconnected";
-    
+
     mqttClient.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_P, willTopic, 0, 1, willMsg);
     if (mqttClient.connected()) {
       Serial.println("OK");
@@ -94,56 +98,50 @@ void disconnectMqtt() {
   }
 }
 
-
 bool readDht22() {
+  Serial.println("Reading DHT22.....");
   bool result = false;
-  int chk = DHT.read22(DHT22_PIN);
+  int chk = DHT.read22(DHTPIN);
   switch (chk) {
-    case DHTLIB_OK:  
-      Serial.println("DHT22 READ OK"); 
+    case DHTLIB_OK:
+      Serial.println("DHT22 READ OK");
       result = true;
       break;
-    case DHTLIB_ERROR_CHECKSUM: 
-      Serial.println("DHT22 Checksum error"); 
+    case DHTLIB_ERROR_CHECKSUM:
+      Serial.println("DHT22 Checksum error");
       break;
-    case DHTLIB_ERROR_TIMEOUT: 
-      Serial.println("DHT22 Time out error"); 
+    case DHTLIB_ERROR_TIMEOUT:
+      Serial.println("DHT22 Time out error");
       break;
-    default: 
-      Serial.println("DHT22 Unknown error"); 
+    default:
+      Serial.println("DHT22 Unknown error");
       break;
   }
   return result;
 }
 
-
 void sendEnvReadings() {
-  connectWifi();
-  connectMqtt();
-
   if (readDht22()) {
+    Serial.print("Temp/humidity: ");
+    Serial.print(DHT.temperature);
+    Serial.print("/");
+    Serial.print(DHT.humidity);
+
+    connectWifi();
+    connectMqtt();
     publishFloat(TOPIC_ENV_TEMP, ctof(DHT.temperature));
     float h = DHT.humidity + DHT_HUMID_OFFSET;
-    /*
-     * from dht11 
-     if (h > 100) {
-      h = 99;
-    }
-    */
     publishFloat(TOPIC_ENV_HUMID, h);
+    //disconnectMqtt();
+    //disconnectWifi();
   }
-
-  disconnectMqtt();
-  disconnectWiFi();
 }
-    
 
 void publishFloat(const char * topic, const float val) {
   char sval[10];
   dtostrf(val, 4, 2, sval);
   publishString(topic, sval);
 }
-
 
 void publishString(const char * topic, const char * val) {
   Serial.print("MQTT client is connected?  ");
@@ -158,14 +156,13 @@ void publishString(const char * topic, const char * val) {
     Serial.println("succeeded");
   } else {
     Serial.println("FAILED!");
-//    mqttClient.disconnect();
   }
 }
 
 /****************************************************************************************/
 /****************************************************************************************/
 void loop() {
-//  TODO: Deep sleep until time to next reading
+  //  TODO: Deep sleep until time to next reading
   Serial.println("Updating environment readings.....");
   sendEnvReadings();
   mqttClient.loop();
